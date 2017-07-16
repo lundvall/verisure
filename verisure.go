@@ -126,26 +126,24 @@ type SmartPlugState struct {
 
 // Verisure app API client
 type Verisure struct {
-	baseURL  string
-	username string
-	giid     string
-	client   http.Client
+	baseURL string
+	giid    string
+	client  http.Client
 }
 
 // Login ...
 func (v *Verisure) Login(ctx context.Context, username, password string) error {
-	v.username = username
 	var err error
 	for _, u := range apiURLs {
 		v.baseURL = u
-		err = v.authenticate(ctx, password)
+		err = v.authenticate(ctx, username, password)
 		if err != nil {
 			continue
 		}
 		break
 	}
 
-	giid, err := v.installation(ctx)
+	giid, err := v.installation(ctx, username)
 	if err != nil {
 		return err
 	}
@@ -154,12 +152,12 @@ func (v *Verisure) Login(ctx context.Context, username, password string) error {
 	return err
 }
 
-func (v *Verisure) authenticate(ctx context.Context, password string) error {
+func (v *Verisure) authenticate(ctx context.Context, username, password string) error {
 	req, err := newRequest(http.MethodPost, v.baseURL+"/cookie", nil)
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth("CPE/"+v.username, password)
+	req.SetBasicAuth("CPE/"+username, password)
 
 	res, err := v.client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -174,9 +172,9 @@ func (v *Verisure) authenticate(ctx context.Context, password string) error {
 	return nil
 }
 
-func (v *Verisure) installation(ctx context.Context) (string, error) {
+func (v *Verisure) installation(ctx context.Context, username string) (string, error) {
 	var installation string
-	url := fmt.Sprintf("%s/installation/search?email=%s", v.baseURL, v.username)
+	url := fmt.Sprintf("%s/installation/search?email=%s", v.baseURL, username)
 	req, err := newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return installation, err
