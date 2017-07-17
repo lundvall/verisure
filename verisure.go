@@ -133,14 +133,8 @@ type Verisure struct {
 
 // Login ...
 func (v *Verisure) Login(ctx context.Context, username, password string) error {
-	var err error
-	for _, u := range apiURLs {
-		v.baseURL = u
-		err = v.authenticate(ctx, username, password)
-		if err != nil {
-			continue
-		}
-		break
+	if err := v.tryURLs(ctx, username, password); err != nil {
+		return err
 	}
 
 	giid, err := v.installation(ctx, username)
@@ -149,6 +143,17 @@ func (v *Verisure) Login(ctx context.Context, username, password string) error {
 	}
 
 	v.giid = giid
+	return nil
+}
+
+func (v *Verisure) tryURLs(ctx context.Context, username, password string) error {
+	var err error
+	for _, u := range apiURLs {
+		v.baseURL = u
+		if err = v.authenticate(ctx, username, password); err == nil {
+			break
+		}
+	}
 	return err
 }
 
@@ -265,6 +270,7 @@ func (v *Verisure) UpdateSmartplug(ctx context.Context, updates []SmartPlugState
 	return nil
 }
 
+// New Verisure client
 func New() Verisure {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -272,6 +278,13 @@ func New() Verisure {
 	}
 
 	return Verisure{client: http.Client{Jar: jar}}
+}
+
+// NewWithGIID when giid is known
+func NewWithGIID(giid string) Verisure {
+	v := New()
+	v.giid = giid
+	return v
 }
 
 func newRequest(method, url string, body io.Reader) (*http.Request, error) {
