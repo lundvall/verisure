@@ -124,11 +124,26 @@ type SmartPlugState struct {
 	State       bool   `json:"state"`
 }
 
+type installation struct {
+	GIID            string `json:"giid"`
+	FirmwareVersion int    `json:"firmwareVersion"`
+	RoutingGroup    string `json:"routingGroup"`
+	Shard           int    `json:"shard"`
+	Locale          string `json:"locale"`
+	SignalFilterID  int    `json:"signalFilterId"`
+	Deleted         bool   `json:"deleted"`
+	CID             string `json:"cid"`
+	Street          string `json:"street"`
+	StreetNo1       string `json:"streetNo1"`
+	StreetNo2       string `json:"streetNo2"`
+	Alias           string `json:"alias"`
+}
+
 // Verisure app API client
 type Verisure struct {
-	baseURL string
-	giid    string
-	client  http.Client
+	baseURL       string
+	client        http.Client
+	installations []installation
 }
 
 // Login ...
@@ -137,13 +152,7 @@ func (v *Verisure) Login(ctx context.Context, username, password string) error {
 		return err
 	}
 
-	giid, err := v.installation(ctx, username)
-	if err != nil {
-		return err
-	}
-
-	v.giid = giid
-	return nil
+	return v.installation(ctx, username)
 }
 
 func (v *Verisure) tryURLs(ctx context.Context, username, password string) error {
@@ -177,25 +186,24 @@ func (v *Verisure) authenticate(ctx context.Context, username, password string) 
 	return nil
 }
 
-func (v *Verisure) installation(ctx context.Context, username string) (string, error) {
-	var installation string
+func (v *Verisure) installation(ctx context.Context, username string) error {
 	url := fmt.Sprintf("%s/installation/search?email=%s", v.baseURL, username)
 	req, err := newRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return installation, err
+		return err
 	}
 
 	res, err := v.client.Do(req.WithContext(ctx))
 	if err != nil {
-		return installation, err
+		return err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return installation, fmt.Errorf("installations: %d %s", res.StatusCode, res.Status)
+		return fmt.Errorf("installations: %d %s", res.StatusCode, res.Status)
 	}
 
-	return giid(res.Body)
+	return json.NewDecoder(res.Body).Decode(&v.installations)
 }
 
 // Logout ...
@@ -220,7 +228,7 @@ func (v *Verisure) Logout(ctx context.Context) error {
 // Overview ...
 func (v *Verisure) Overview(ctx context.Context) (Overview, error) {
 	var o Overview
-	url := fmt.Sprintf("%s/installation/%s/overview", v.baseURL, v.giid)
+	url := fmt.Sprintf("%s/installation/%s/overview", v.baseURL, v.installations[0].GIID)
 	req, err := newRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return o, err
@@ -251,7 +259,7 @@ func (v *Verisure) UpdateSmartplug(ctx context.Context, updates []SmartPlugState
 		return err
 	}
 
-	url := fmt.Sprintf("%s/installation/%s/smartplug/state", v.baseURL, v.giid)
+	url := fmt.Sprintf("%s/installation/%s/smartplug/state", v.baseURL, v.installations[0].GIID)
 	req, err := newRequest(http.MethodPost, url, bytes.NewReader(bs))
 	if err != nil {
 		return err
@@ -277,14 +285,9 @@ func New() Verisure {
 		log.Fatal(err)
 	}
 
-	return Verisure{client: http.Client{Jar: jar}}
-}
-
-// NewWithGIID when giid is known
-func NewWithGIID(giid string) Verisure {
-	v := New()
-	v.giid = giid
-	return v
+	return Verisure{
+		client:        http.Client{Jar: jar},
+		installations: make([]installation, 0)}
 }
 
 func newRequest(method, url string, body io.Reader) (*http.Request, error) {
@@ -297,24 +300,4 @@ func newRequest(method, url string, body io.Reader) (*http.Request, error) {
 	req.Header.Add("Content-Type", mediaType)
 
 	return req, nil
-}
-
-func giid(rc io.ReadCloser) (string, error) {
-	var giid string
-	result := make([]map[string]interface{}, 0)
-	err := json.NewDecoder(rc).Decode(&result)
-	if err != nil {
-		return giid, err
-	}
-
-	if len(result) < 1 {
-		return giid, fmt.Errorf("no installations found")
-	}
-
-	giid, ok := result[0]["giid"].(string)
-	if !ok {
-		return giid, fmt.Errorf("no giid found")
-	}
-
-	return giid, nil
 }
